@@ -1,0 +1,103 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: Hifromlamby
+
+Parameters:
+
+  RailsEnv:
+    Type: String
+    Default: staging
+    AllowedValues:
+      - staging
+      - production
+
+Globals:
+  Function:
+    Architectures:
+      - arm64
+    AutoPublishAlias: live
+    DeploymentPreference:
+      Type: AllAtOnce
+    Environment:
+      Variables:
+        RAILS_ENV: !Ref RailsEnv
+        JOBS_QUEUE_NAME: !GetAtt JobsQueue.QueueName
+    Timeout: 30
+    # Replace the following with your VPC configuration
+    # VpcConfig:
+    #   SubnetIds:
+    #     - subnet-00000000000000000
+    #     - subnet-00000000000000000
+    #     - subnet-00000000000000000
+    #   SecurityGroupIds:
+    #     - sg-00000000000000000
+
+Resources:
+  JobsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      ReceiveMessageWaitTimeSeconds: 10
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt JobsDLQueue.Arn
+        maxReceiveCount: 13
+      VisibilityTimeout: 301
+
+  JobsDLQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod: 1209600
+
+  RailsLambda:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: web
+    Properties:
+      FunctionUrlConfig:
+        AuthType: NONE
+      MemorySize: 1792
+      PackageType: Image
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:*
+              Resource:
+                - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${JobsQueue.QueueName}
+  JobsLambda:
+    Type: AWS::Serverless::Function
+    Metadata:
+      DockerContext: .
+      Dockerfile: Dockerfile
+      DockerTag: jobs
+    Properties:
+      Events:
+        SQSJobs:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt JobsQueue.Arn
+            BatchSize: 1
+            FunctionResponseTypes:
+              - ReportBatchItemFailures
+            Enabled: true
+      ImageConfig:
+        Command:
+          - config/environment.Lambdakiq.cmd
+      MemorySize: 1792
+      PackageType: Image
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - sqs:*
+              Resource:
+                - !Sub arn:aws:sqs:${AWS::Region}:${AWS::AccountId}:${JobsQueue.QueueName}
+      Timeout: 300
+
+Outputs:
+  RailsLambdaUrl:
+    Description: Lambda Function URL
+    Value: !GetAtt RailsLambdaUrl.FunctionUrl
