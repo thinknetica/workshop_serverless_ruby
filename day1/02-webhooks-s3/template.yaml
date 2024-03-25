@@ -1,0 +1,40 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: HiFromWorkshop
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+
+Resources:
+  MessagesBucket:
+    Type: AWS::S3::Bucket
+  WebhooksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: app/
+      Handler: webhooks.lambda_handler
+      Runtime: ruby3.2
+      Architectures:
+        - arm64
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          MESSAGES_BUCKET: !Ref MessagesBucket
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - s3:PutObject
+              Resource: !Sub
+                - ${BucketArn}/*
+                - { BucketArn: !GetAtt MessagesBucket.Arn }
+
+Outputs:
+  WebhooksUrl:
+    Description: "Webhooks Function URL"
+    Value:
+      Fn::GetAtt: WebhooksFunctionUrl.FunctionUrl

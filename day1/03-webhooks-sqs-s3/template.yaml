@@ -1,0 +1,64 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: HiFromWorkshop
+
+Globals:
+  Function:
+    Timeout: 3
+    MemorySize: 128
+    CodeUri: app/
+    Runtime: ruby3.2
+    Architectures:
+      - arm64
+
+Resources:
+  MessagesBucket:
+    Type: AWS::S3::Bucket
+
+  MessagesQueue:
+    Type: AWS::SQS::Queue
+
+  EventSaverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: events.lambda_handler
+      Environment:
+        Variables:
+          MESSAGES_BUCKET: !Ref MessagesBucket
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "s3:PutObject"
+              Resource: !Sub
+                - ${BucketArn}/*
+                - { BucketArn: !GetAtt MessagesBucket.Arn }
+      Events:
+        SQSEvent:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt MessagesQueue.Arn
+
+  WebhooksFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: webhooks.lambda_handler
+      FunctionUrlConfig:
+        AuthType: NONE
+      Environment:
+        Variables:
+          MESSAGES_QUEUE: !Ref MessagesQueue
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "sqs:SendMessage"
+              Resource: !GetAtt MessagesQueue.Arn
+
+Outputs:
+  WebhooksUrl:
+    Description: "Webhooks Function URL"
+    Value:
+      Fn::GetAtt: WebhooksFunctionUrl.FunctionUrl
